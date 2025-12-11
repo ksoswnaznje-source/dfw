@@ -23,16 +23,9 @@ contract Distributor {
         _;
     }
 
-    modifier lockTheSwap() {
-        inSwapAndLiquify = true;
-        _;
-        inSwapAndLiquify = false;
-    }
-
-
     address public RICH;
     IUniswapV2Router02 constant uniswapV2Router = IUniswapV2Router02(_ROUTER);
-    
+
     constructor(address _token) {
         owner = msg.sender;
         authorizedCallers[msg.sender] = true;
@@ -42,7 +35,7 @@ contract Distributor {
         IERC20(_token).approve(address(_ROUTER), type(uint256).max);
     }
 
-    function swapAndLiquify() external lockTheSwap onlyAuthorized {
+    function swapAndLiquify() external {
         IERC20 usdt = IERC20(USDT);
         IERC20 rich = IERC20(RICH);
 
@@ -59,24 +52,24 @@ contract Distributor {
     }
 
     function swapTokenForUsdt(uint256 tokenAmount, address to) internal {
-        unchecked {
-            address[] memory path = new address[](2);
-            path[0] = address(RICH);
-            path[1] = address(USDT);
-            // make the swap
-            uniswapV2Router
-                .swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                    tokenAmount,
-                    0, // accept any amount of ETH
-                    path,
-                    to,
-                    block.timestamp
-                );
-        }
+    unchecked {
+        address[] memory path = new address[](2);
+        path[0] = address(RICH);
+        path[1] = address(USDT);
+        // make the swap
+        uniswapV2Router
+        .swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            tokenAmount,
+            0, // accept any amount of ETH
+            path,
+            to,
+            block.timestamp
+        );
+    }
     }
 
 
-    
+
     function addLiquidity(uint256 tokenAmount, uint256 usdtAmount) internal {
         uniswapV2Router.addLiquidity(
             address(RICH),
@@ -99,7 +92,14 @@ contract Distributor {
         require(newOwner != address(0), "Invalid address");
         owner = newOwner;
     }
-    
+
+    function withdraw(address _token, address to, uint256 _amount)
+    external
+    onlyOwner
+    {
+        IERC20(_token).transfer(to, _amount);
+    }
+
     function setAuthorizedCaller(address caller, bool status) external onlyOwner {
         authorizedCallers[caller] = status;
     }
