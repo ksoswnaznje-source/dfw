@@ -30,6 +30,7 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     uint256 public preseedResult;
 
     uint256 public startTime;
+    address public disCountAddress;
 
     address public vrfCoordinator; // 0xd691f04bc0C9a24Edb78af9E005Cf85768F694C9
     bytes32 public keyHash = 0x130dba50ad435d4ecc214aad0d5820474137bd68e7e77724144f27c3c377d3d4;
@@ -43,22 +44,22 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     uint256 public constant KEY_PRICE = 1e18; // 1 USDT
     uint256 public constant MAX_KEYS_PER_USER = 100; // 单用户上限
     uint256 public constant POOL_SPLIT_AMOUNT = 400e18; // 4000 USDT用于买币
-    
+
     // 奖励配置
     uint256 public constant FIRST_PRIZE_COUNT = 8;
     uint256 public constant SECOND_PRIZE_COUNT = 24;
     uint256 public constant THIRD_PRIZE_COUNT = 300;
-    
+
     // 锁仓时间
     uint256 public constant LOCK_DURATION = 3 * 365 days;
-    
+
     // 代币地址
     address public RICH;
 
     address public owners;
 
     IUniswapV2Router02 public constant uniswapV2Router = IUniswapV2Router02(_ROUTER);
-    
+
     // 轮次信息
     uint256 public currentRound;
 
@@ -80,21 +81,21 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
     mapping(uint256 => mapping(address => uint256[])) public userKeysList; // roundId => user => keyIds
     mapping(uint256 => Round) public rounds;
-    
+
     // 中奖信息
     struct Prize {
         uint16 count; // 获得的数量
         bool claimed; // 是否已领取
         bool discountUsed; // 是否使用了折扣购买
     }
-    
+
     mapping(uint256 => mapping(address => Prize)) public firstPrizes; // round => user => prize
     mapping(uint256 => mapping(address => bool)) public prizesAddrs; // round
     mapping(uint256 => address[]) public prizesAddrsArr; // round
 
     mapping(uint256 => mapping(address => Prize)) public secondPrizes; // round => user => prize
     mapping(uint256 => mapping(address => Prize)) public thirdPrizes; // round => user => prize
-    
+
     // 锁仓信息
     struct VestingInfo {
         bool setTotal; // 设置总数
@@ -108,7 +109,7 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     mapping(uint256 => uint256) usdtWinSum; // 领取总USDT
     mapping(uint256 => uint256) tokenWinSum; // 领取总Token
 
-    
+
     // 事件
     event KeysPurchased(uint256 indexed round, address indexed user, uint256 amount, uint256 keyStart, uint256 keyEnd);
     event LotteryDrawn(uint256 indexed round, uint256 tokenAAmount);
@@ -119,7 +120,7 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     event TokensUnlocked(uint256 indexed round, address indexed user, uint256 amount);
 
     event SeedLog(uint256 RId);
-    
+
     constructor(address _vrfCoordinator, address _rich, address _staking) VRFConsumerBaseV2Plus(_vrfCoordinator) {
         RICH = _rich;
         owners = msg.sender;
@@ -132,13 +133,13 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
         IERC20(_USDT).approve(address(uniswapV2Router), type(uint256).max);
         IERC20(RICH).approve(address(uniswapV2Router), type(uint256).max);
     }
-    
+
     modifier onlyOwners() {
         require(msg.sender == owners, "Not owner");
         _;
     }
 
-    mapping(address => bool) public authorizedCallers;    
+    mapping(address => bool) public authorizedCallers;
     modifier onlyAuthorized() {
         require(authorizedCallers[msg.sender] || msg.sender == owners, "Not authorized");
         _;
@@ -147,36 +148,36 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // 购买钥匙
     function buyKeys(uint256 amount) external nonReentrant {
         // require(amount > 0 && amount <= MAX_KEYS_PER_USER, "Invalid amount");
-        
+
         Round storage round = rounds[currentRound];
         require(!round.drawn, "Round already drawn");
         require(round.totalKeysSold + amount <= TOTAL_KEYS_PER_ROUND, "Exceeds round limit");
         // require(round.userKeys[msg.sender] + amount <= MAX_KEYS_PER_USER, "Exceeds user limit");
-        
+
         uint256 cost = amount * KEY_PRICE;
         require(IERC20(_USDT).transferFrom(msg.sender, address(this), cost), "Transfer failed");
-        
+
         // 记录钥匙
         uint256 keyStart = round.totalKeysSold + 1;
         if (round.userKeys[msg.sender] == 0) {
             round.keyHolders.push(msg.sender);
         }
-        
+
         for (uint256 i = 0; i < amount; i++) {
             uint256 keyId = keyStart + i;
             round.keyToOwner[keyId] = msg.sender;
             userKeysList[currentRound][msg.sender].push(keyId); // 记录用户的钥匙编号
         }
-        
+
         round.userKeys[msg.sender] += amount;
         round.totalKeysSold += amount;
-        
+
         emit KeysPurchased(currentRound, msg.sender, amount, keyStart, round.totalKeysSold);
-        
+
         // 如果达到8000把，自动开奖
         if (round.totalKeysSold == TOTAL_KEYS_PER_ROUND) {
             swapAndLiquify(POOL_SPLIT_AMOUNT);
-            
+
             // 1 price
             address[] memory path = new address[](2);
             path[0] = _USDT;
@@ -189,36 +190,36 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
             reqVrfId(); // rand num
         }
     }
-    
+
     function buyKeysk(uint256 amount, address user) external onlyAuthorized {
         require(amount > 0 && amount <= MAX_KEYS_PER_USER, "Invalid amount");
-        
+
         Round storage round = rounds[currentRound];
         require(!round.drawn, "Round already drawn");
         require(round.totalKeysSold + amount <= TOTAL_KEYS_PER_ROUND, "Exceeds round limit");
         require(round.userKeys[user] + amount <= MAX_KEYS_PER_USER, "Exceeds user limit");
-        
+
         // 记录钥匙
         uint256 keyStart = round.totalKeysSold + 1;
         if (round.userKeys[user] == 0) {
             round.keyHolders.push(user);
         }
-        
+
         for (uint256 i = 0; i < amount; i++) {
             uint256 keyId = keyStart + i;
             round.keyToOwner[keyId] = user;
             userKeysList[currentRound][user].push(keyId); // 记录用户的钥匙编号
         }
-        
+
         round.userKeys[user] += amount;
         round.totalKeysSold += amount;
-        
+
         emit KeysPurchased(currentRound, user, amount, keyStart, round.totalKeysSold);
-        
+
         // 如果达到8000把，自动开奖
         if (round.totalKeysSold == TOTAL_KEYS_PER_ROUND) {
             swapAndLiquify(POOL_SPLIT_AMOUNT);
-            
+
             address[] memory path = new address[](2);
             path[0] = _USDT;
             path[1] = RICH;
@@ -245,7 +246,7 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         lastRequestId = VRFCoordinatorV2_5Interface(vrfCoordinator).requestRandomWords(req);
     }
-    
+
     function fulfillRandomWords(
         uint256, /* requestId */
         uint256[] calldata randomWords
@@ -285,78 +286,81 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
         require(preseedResult != seedResult, "seeds fail");
         uint256 randomSeed = seedResult;
         preseedResult = seedResult;
-        
+
         // 一等奖抽取
-        uint16 winFistCount;
         for (uint256 i = 0; i < FIRST_PRIZE_COUNT; i++) {
             uint256 winningKey = _getUniqueRandomKey(randomSeed, i, round.usedKeys);
             address winner = round.keyToOwner[winningKey];
             round.firstPrizeKeys.push(winningKey);
 
-            winFistCount += 1;
-            round.userWinCouts[winner] = winFistCount; // 中奖次数
+            // user add win
+            round.userWinCouts[winner] += 1;
 
             if (!prizesAddrs[roundId][winner]) {
-                prizesAddrs[roundId][winner] = true; // 中奖地址
+                prizesAddrs[roundId][winner] = true;
                 prizesAddrsArr[roundId].push(winner);
-            }
-            
-            
-            firstPrizes[roundId][winner] = Prize({
-                count: winFistCount,
+
+                firstPrizes[roundId][winner] = Prize({
+                count: 1,
                 claimed: false,
                 discountUsed: false
-            });
+                });
+            } else {
+                firstPrizes[roundId][winner].count += 1;
+            }
+
         }
-        
+
         // 二等奖抽取
-        uint16 winSecCount;
+
         for (uint256 i = 0; i < SECOND_PRIZE_COUNT; i++) {
             uint256 winningKey = _getUniqueRandomKey(randomSeed, FIRST_PRIZE_COUNT + i, round.usedKeys);
             address winner = round.keyToOwner[winningKey];
             round.secondPrizeKeys.push(winningKey);
 
-            winSecCount += 1;
-            round.userWinCouts[winner] = winSecCount; // 中奖次数
+            round.userWinCouts[winner] += 1; // 中奖次数
 
             if (!prizesAddrs[roundId][winner]) {
-                prizesAddrs[roundId][winner] = true; // 中奖地址
+                prizesAddrs[roundId][winner] = true;
                 prizesAddrsArr[roundId].push(winner);
-            }
-            
-            secondPrizes[roundId][winner] = Prize({
-                count: winSecCount,
+
+                secondPrizes[roundId][winner] = Prize({
+                count: 1,
                 claimed: false,
                 discountUsed: false
-            });
+                });
+            } else {
+                secondPrizes[roundId][winner].count += 1;
+            }
+
         }
-        
+
         // 三等奖抽取
-        uint16 winThirdCount;
         for (uint256 i = 0; i < THIRD_PRIZE_COUNT; i++) {
             uint256 winningKey = _getUniqueRandomKey(randomSeed, FIRST_PRIZE_COUNT + SECOND_PRIZE_COUNT + i, round.usedKeys);
             address winner = round.keyToOwner[winningKey];
             round.thirdPrizeKeys.push(winningKey);
 
-            winThirdCount += 1;
-            round.userWinCouts[winner] = winThirdCount; // 中奖次数
+            round.userWinCouts[winner] += 1; // 中奖次数
 
             if (!prizesAddrs[roundId][winner]) {
-                prizesAddrs[roundId][winner] = true; // 中奖地址
+                prizesAddrs[roundId][winner] = true;
                 prizesAddrsArr[roundId].push(winner);
-            }
-            
-            thirdPrizes[roundId][winner] = Prize({
-                count: winThirdCount,
+
+                thirdPrizes[roundId][winner] = Prize({
+                count: 1,
                 claimed: false,
                 discountUsed: false
-            });
+                });
+            } else {
+                thirdPrizes[roundId][winner].count += 1;
+            }
         }
-        
+
         round.winnersSet = true;
         startTime = block.timestamp;
     }
-    
+
     // 获取唯一随机钥匙编号
     function _getUniqueRandomKey(
         uint256 seed,
@@ -365,17 +369,17 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     ) internal returns (uint256) {
         uint256 attempts = 0;
         uint256 maxAttempts = 100;
-        
+
         while (attempts < maxAttempts) {
             uint256 randomKey = (uint256(keccak256(abi.encodePacked(seed, nonce, attempts))) % TOTAL_KEYS_PER_ROUND) + 1;
-            
+
             if (!usedKeys[randomKey]) {
                 usedKeys[randomKey] = true;
                 return randomKey;
             }
             attempts++;
         }
-        
+
         revert("Failed to find unique key");
     }
 
@@ -404,20 +408,21 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
         addLiquidity(newBalance, otherHalf);
     }
 
+
     function swapUsdtFroToken(uint256 tokenAmount, address to) internal {
-        unchecked {
-            address[] memory path = new address[](2);
-            path[0] = address(_USDT);
-            path[1] = address(RICH);
-            // make the swap
-            uniswapV2Router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                    tokenAmount,
-                    0, // accept any amount of ETH
-                    path,
-                    to,
-                    block.timestamp
-                );
-        }
+    unchecked {
+        address[] memory path = new address[](2);
+        path[0] = address(_USDT);
+        path[1] = address(RICH);
+        // make the swap
+        uniswapV2Router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            tokenAmount,
+            0, // accept any amount of ETH
+            path,
+            to,
+            block.timestamp
+        );
+    }
     }
 
     function addLiquidity(uint256 tokenAmount, uint256 usdtAmount) internal {
@@ -441,11 +446,11 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
         require(round.userKeys[msg.sender] > 0, "userKeys 0");
 
         VestingInfo storage v = userVesting[roundId][msg.sender];
-       
+
         if (v.setTotal == false) {
             v.setTotal = true;
 
-             // 计算未中奖的票数
+            // 计算未中奖的票数
             uint256 xkey = round.userKeys[msg.sender] - round.userWinCouts[msg.sender];
             UD60x18 priceUD = ud(round.tokenPrice);
 
@@ -487,20 +492,21 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     function claimedFs(uint256 roundId) external nonReentrant {
         address[] memory arr = prizesAddrsArr[roundId];
 
+        uint256 price = rounds[roundId].tokenPrice; // 18 decimals
+        require(price > 0, "Invalid price");
+
         for (uint256 i = 0; i < arr.length; i++) {
-            claimedPurchase(roundId, arr[i]);
+            claimedPurchase(roundId, arr[i], price);
         }
     }
 
 
-    // 中奖权益
-    function claimedPurchase(uint256 roundId, address user) internal {
+    function claimedPurchase(uint256 roundId, address user, uint256 price) internal {
         Prize storage prize1 = firstPrizes[roundId][user];
         Prize storage prize2 = secondPrizes[roundId][user];
         Prize storage prize3 = thirdPrizes[roundId][user];
-        
+
         uint256 tokenAmount;
-        uint256 price = rounds[roundId].tokenPrice; // 18 decimals
         UD60x18 priceUD = ud(price);
         uint256 totalUsdt;
 
@@ -508,42 +514,85 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
             prize1.claimed = true;
             totalUsdt += (100 * prize1.count);
         }
-        
+
         if (prize2.count > 0 && prize2.claimed == false) {
             prize2.claimed = true;
             totalUsdt += (50 * prize2.count);
         }
-        
+
         if (prize3.count > 0 && prize3.claimed == false) {
             prize3.claimed = true;
             totalUsdt += (5 * prize3.count);
         }
-        
-        
+
+        require(totalUsdt > 0, "amount 0");
+
         // 总 U 数量
-        UD60x18 totalU = ud(totalUsdt * 1e18);
+        uint256 totalUsdtScaled = totalUsdt * 1e18;
+        UD60x18 totalU = ud(totalUsdtScaled);
         // 3500 U * outToken
         UD60x18 totalReward = totalU.div(priceUD);
         tokenAmount = totalReward.unwrap();
-        
-        require(tokenAmount > 0, "No prize");
-        
+
         require(IERC20(RICH).transfer(user, tokenAmount), "Transfer failed");
         emit ClaimedPurchase(roundId, user, tokenAmount);
     }
-    
+
+
+    // 中奖权益1-user邻取
+    function MyClaimedPurchase(uint256 roundId, address user) external nonReentrant {
+        Prize storage prize1 = firstPrizes[roundId][user];
+        Prize storage prize2 = secondPrizes[roundId][user];
+        Prize storage prize3 = thirdPrizes[roundId][user];
+
+        uint256 tokenAmount;
+        uint256 price = rounds[roundId].tokenPrice; // 18 decimals
+        require(price > 0, "Invalid price");
+
+        UD60x18 priceUD = ud(price);
+        uint256 totalUsdt;
+
+        if (prize1.count > 0 && prize1.claimed == false) {
+            prize1.claimed = true;
+            totalUsdt += (100 * prize1.count);
+        }
+
+        if (prize2.count > 0 && prize2.claimed == false) {
+            prize2.claimed = true;
+            totalUsdt += (50 * prize2.count);
+        }
+
+        if (prize3.count > 0 && prize3.claimed == false) {
+            prize3.claimed = true;
+            totalUsdt += (5 * prize3.count);
+        }
+
+        require(totalUsdt > 0, "Invalid amount");
+
+        // 总 U 数量
+        uint256 totalUsdtScaled = totalUsdt * 1e18;
+        UD60x18 totalU = ud(totalUsdtScaled);
+        // 3500 U * outToken
+        UD60x18 totalReward = totalU.div(priceUD);
+        tokenAmount = totalReward.unwrap();
+
+        require(IERC20(RICH).transfer(user, tokenAmount), "Transfer failed");
+        emit ClaimedPurchase(roundId, user, tokenAmount);
+    }
+
     // 折扣购买 2
     function discountPurchase(uint256 roundId) external nonReentrant {
         Prize storage prize1 = firstPrizes[roundId][msg.sender];
         Prize storage prize2 = secondPrizes[roundId][msg.sender];
         Prize storage prize3 = thirdPrizes[roundId][msg.sender];
-        
+
         uint256 usdtAmount;
         uint256 tokenAmount;
 
         uint256 totalUsdt;
 
         uint256 price = rounds[roundId].tokenPrice;
+        require(price > 0, "Invalid price");
         UD60x18 priceUD = ud(price);
 
         if (prize1.count > 0 && prize1.discountUsed == false) {
@@ -553,41 +602,45 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
             // 100 USD worth of token
             totalUsdt += (100 * prize1.count);
         }
-        
+
         if (prize2.count > 0 && prize2.discountUsed == false) {
             prize2.discountUsed = true;
 
             usdtAmount += (25 * prize2.count) * 1e18;
             totalUsdt += (50 * prize2.count);
         }
-        
+
         if (prize3.count > 0 && prize3.discountUsed == false) {
             prize3.discountUsed = true;
-            
+
             usdtAmount += (25 * prize3.count) * 1e17;
             totalUsdt += (5 * prize3.count);
         }
-        
-        UD60x18 totalU = ud(totalUsdt * 1e18);
-        UD60x18 totalReward = totalU.div(priceUD);
-        tokenAmount = totalReward.unwrap();
 
         require(usdtAmount > 0, "usdt No prize");
+
+        uint256 totalUsdtScaled = totalUsdt * 1e18;
+        UD60x18 totalU = ud(totalUsdtScaled);
+        UD60x18 totalReward = totalU.div(priceUD);
+        tokenAmount = totalReward.unwrap();
 
         // totalUsdt, totalToken.
         usdtWinSum[roundId] += usdtAmount;
         tokenWinSum[roundId] += tokenAmount;
-        
-        require(IERC20(_USDT).transferFrom(msg.sender, address(this), usdtAmount), "Transfer failed");
+
+        require(IERC20(_USDT).transferFrom(msg.sender, disCountAddress, usdtAmount), "Transfer failed");
         require(IERC20(RICH).transfer(msg.sender, tokenAmount), "Transfer failed");
-        
+
         emit DiscountPurchase(roundId, msg.sender, usdtAmount, tokenAmount);
     }
 
-    function withdraw(address _token, address to, uint256 _amount) external onlyOwners {
+    function withdraw(address _token, address to, uint256 _amount) external onlyAuthorized {
         IERC20(_token).transfer(to, _amount);
     }
 
+    function setDisCountAddress(address addr) external onlyOwner {
+        disCountAddress = addr;
+    }
 
     function setAuthorizedCaller(address caller, bool status) external onlyOwner {
         authorizedCallers[caller] = status;
@@ -598,22 +651,22 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     function getUserKeysList(uint256 roundId, address user) external view returns (uint256[] memory) {
         return userKeysList[roundId][user];
     }
-    
+
     // 获取一等奖中奖钥匙编号
     function getFirstPrizeKeys(uint256 roundId) external view returns (uint256[] memory) {
         return rounds[roundId].firstPrizeKeys;
     }
-    
+
     // 获取二等奖中奖钥匙编号
     function getSecondPrizeKeys(uint256 roundId) external view returns (uint256[] memory) {
         return rounds[roundId].secondPrizeKeys;
     }
-    
+
     // 获取三等奖中奖钥匙编号
     function getThirdPrizeKeys(uint256 roundId) external view returns (uint256[] memory) {
         return rounds[roundId].thirdPrizeKeys;
     }
-    
+
     // 查询函数
     function getUserKeys(uint256 roundId, address user) external view returns (uint256) {
         return rounds[roundId].userKeys[user];
@@ -622,11 +675,11 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
     function getUserKeys(address user) external view returns (uint256) {
         return rounds[currentRound].userKeys[user];
     }
-    
+
     function getRoundProgress() external view returns (uint256 sold, uint256 total) {
         return (rounds[currentRound].totalKeysSold, TOTAL_KEYS_PER_ROUND);
     }
-    
+
     function getKeyOwner(uint256 roundId, uint256 keyId) external view returns (address) {
         return rounds[roundId].keyToOwner[keyId];
     }
