@@ -579,7 +579,6 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
         UD60x18 totalValueUD = ud(totalTokenValue * 1e18);
         UD60x18 tokenAmountUD = totalValueUD.div(priceUD);
         uint256 tokenAmount = tokenAmountUD.unwrap();
-
         require(tokenAmount > 0, "Token amount is zero");
 
         // 检查余额
@@ -601,36 +600,35 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
         Prize storage prize2 = secondPrizes[roundId][msg.sender];
         Prize storage prize3 = thirdPrizes[roundId][msg.sender];
 
-        uint256 totalUsdtToPay = 0;      // 用户需要支付的USDT（18位精度）
-        uint256 totalTokenValue = 0;     // 可获得的代币价值（无精度，单位：USD）
+        uint256 totalUsdtToPay = 0;
+        uint256 totalTokenValue = 0;
 
         if (prize1.count > 0 && !prize1.discountUsed) {
             prize1.discountUsed = true;
-            totalUsdtToPay += 50e18 * prize1.count;     // 50 USDT * count
+            totalUsdtToPay += 50 * prize1.count;     // 50 USDT * count
             totalTokenValue += 100 * prize1.count;       // 100 USD * count
         }
 
         if (prize2.count > 0 && !prize2.discountUsed) {
             prize2.discountUsed = true;
-            totalUsdtToPay += 25e18 * prize2.count;     // 25 USDT * count
+            totalUsdtToPay += 25 * prize2.count;     // 25 USDT * count
             totalTokenValue += 50 * prize2.count;        // 50 USD * count
         }
 
         if (prize3.count > 0 && !prize3.discountUsed) {
             prize3.discountUsed = true;
-            totalUsdtToPay += 25e17 * prize3.count;     // 2.5 USDT * count (2.5 = 25/10)
+            totalUsdtToPay += (25 * prize3.count) / 10;
             totalTokenValue += 5 * prize3.count;         // 5 USD * count
         }
 
         require(totalUsdtToPay > 0, "No prize to claim");
+        totalUsdtToPay =  totalUsdtToPay * 1e18;
 
         // 计算可获得的代币数量
-        // tokenAmount = totalTokenValue (USD) / tokenPrice (USD per token)
         UD60x18 priceUD = ud(round.tokenPrice);
         UD60x18 totalValueUD = ud(totalTokenValue * 1e18);
         UD60x18 tokenAmountUD = totalValueUD.div(priceUD);
         uint256 tokenAmount = tokenAmountUD.unwrap();
-
         require(tokenAmount > 0, "Token amount is zero");
 
         // 更新统计数据
@@ -645,6 +643,7 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         emit DiscountPurchase(roundId, msg.sender, totalUsdtToPay, tokenAmount);
     }
+
 
     function withdraw(address _token, address to, uint256 _amount) external onlyAuthorized {
         IERC20(_token).transfer(to, _amount);
