@@ -490,13 +490,14 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
     // 权益1
     function claimedFs(uint256 roundId) external nonReentrant {
+        Round storage round = rounds[roundId];
+        require(round.winnersSet, "Winners not set");
+        require(round.tokenPrice > 0, "Invalid price");
+
         address[] memory arr = prizesAddrsArr[roundId];
 
-        uint256 price = rounds[roundId].tokenPrice; // 18 decimals
-        require(price > 0, "Invalid price");
-
         for (uint256 i = 0; i < arr.length; i++) {
-            claimedPurchase(roundId, arr[i], price);
+            claimedPurchase(roundId, arr[i], round.tokenPrice);
         }
     }
 
@@ -506,132 +507,143 @@ contract LotteryContract is VRFConsumerBaseV2Plus, ReentrancyGuard {
         Prize storage prize2 = secondPrizes[roundId][user];
         Prize storage prize3 = thirdPrizes[roundId][user];
 
-        uint256 tokenAmount;
-        UD60x18 priceUD = ud(price);
-        uint256 totalUsdt;
+        uint256 totalTokenValue = 0;
 
-        if (prize1.count > 0 && prize1.claimed == false) {
+        // 一等奖
+        if (prize1.count > 0 && !prize1.claimed) {
             prize1.claimed = true;
-            totalUsdt += (100 * prize1.count);
+            totalTokenValue += 100 * prize1.count;
         }
 
-        if (prize2.count > 0 && prize2.claimed == false) {
+        // 二等奖
+        if (prize2.count > 0 && !prize2.claimed) {
             prize2.claimed = true;
-            totalUsdt += (50 * prize2.count);
+            totalTokenValue += 50 * prize2.count;
         }
 
-        if (prize3.count > 0 && prize3.claimed == false) {
+        // 三等奖
+        if (prize3.count > 0 && !prize3.claimed) {
             prize3.claimed = true;
-            totalUsdt += (5 * prize3.count);
+            totalTokenValue += 5 * prize3.count;
         }
 
-        require(totalUsdt > 0, "amount 0");
+        require(totalTokenValue > 0, "No prize to claim");
 
-        // 总 U 数量
-        uint256 totalUsdtScaled = totalUsdt * 1e18;
-        UD60x18 totalU = ud(totalUsdtScaled);
-        // 3500 U * outToken
-        UD60x18 totalReward = totalU.div(priceUD);
-        tokenAmount = totalReward.unwrap();
+        // 计算代币数量
+        UD60x18 priceUD = ud(price);
+        UD60x18 totalValueUD = ud(totalTokenValue * 1e18);
+        UD60x18 tokenAmountUD = totalValueUD.div(priceUD);
+        uint256 tokenAmount = tokenAmountUD.unwrap();
+
+        require(IERC20(RICH).balanceOf(address(this)) >= tokenAmount, "Insufficient token balance");
 
         require(IERC20(RICH).transfer(user, tokenAmount), "Transfer failed");
         emit ClaimedPurchase(roundId, user, tokenAmount);
     }
 
 
-    // 中奖权益1-user邻取
-    function MyClaimedPurchase(uint256 roundId, address user) external nonReentrant {
+    function adminClaimPrize(uint256 roundId, address user) external nonReentrant onlyAuthorized {
+        Round storage round = rounds[roundId];
+        require(round.winnersSet, "Winners not set");
+        require(round.tokenPrice > 0, "Invalid price");
+        require(user != address(0), "Invalid user address");
+
         Prize storage prize1 = firstPrizes[roundId][user];
         Prize storage prize2 = secondPrizes[roundId][user];
         Prize storage prize3 = thirdPrizes[roundId][user];
 
-        uint256 tokenAmount;
-        uint256 price = rounds[roundId].tokenPrice; // 18 decimals
-        require(price > 0, "Invalid price");
+        uint256 totalTokenValue = 0;
 
-        UD60x18 priceUD = ud(price);
-        uint256 totalUsdt;
-
-        if (prize1.count > 0 && prize1.claimed == false) {
+        // 一等奖
+        if (prize1.count > 0 && !prize1.claimed) {
             prize1.claimed = true;
-            totalUsdt += (100 * prize1.count);
+            totalTokenValue += 100 * prize1.count;
         }
 
-        if (prize2.count > 0 && prize2.claimed == false) {
+        // 二等奖
+        if (prize2.count > 0 && !prize2.claimed) {
             prize2.claimed = true;
-            totalUsdt += (50 * prize2.count);
+            totalTokenValue += 50 * prize2.count;
         }
 
-        if (prize3.count > 0 && prize3.claimed == false) {
+        // 三等奖
+        if (prize3.count > 0 && !prize3.claimed) {
             prize3.claimed = true;
-            totalUsdt += (5 * prize3.count);
+            totalTokenValue += 5 * prize3.count;
         }
 
-        require(totalUsdt > 0, "Invalid amount");
+        require(totalTokenValue > 0, "No prize to claim");
 
-        // 总 U 数量
-        uint256 totalUsdtScaled = totalUsdt * 1e18;
-        UD60x18 totalU = ud(totalUsdtScaled);
-        // 3500 U * outToken
-        UD60x18 totalReward = totalU.div(priceUD);
-        tokenAmount = totalReward.unwrap();
+        // 计算代币数量
+        UD60x18 priceUD = ud(round.tokenPrice);
+        UD60x18 totalValueUD = ud(totalTokenValue * 1e18);
+        UD60x18 tokenAmountUD = totalValueUD.div(priceUD);
+        uint256 tokenAmount = tokenAmountUD.unwrap();
 
+        require(tokenAmount > 0, "Token amount is zero");
+
+        // 检查余额
+        require(IERC20(RICH).balanceOf(address(this)) >= tokenAmount, "Insufficient token balance");
+
+        // 转账
         require(IERC20(RICH).transfer(user, tokenAmount), "Transfer failed");
         emit ClaimedPurchase(roundId, user, tokenAmount);
     }
 
+
     // 折扣购买 2
     function discountPurchase(uint256 roundId) external nonReentrant {
+        Round storage round = rounds[roundId];
+        require(round.winnersSet, "Winners not set");
+        require(round.tokenPrice > 0, "Invalid price");
+
         Prize storage prize1 = firstPrizes[roundId][msg.sender];
         Prize storage prize2 = secondPrizes[roundId][msg.sender];
         Prize storage prize3 = thirdPrizes[roundId][msg.sender];
 
-        uint256 usdtAmount;
-        uint256 tokenAmount;
+        uint256 totalUsdtToPay = 0;      // 用户需要支付的USDT（18位精度）
+        uint256 totalTokenValue = 0;     // 可获得的代币价值（无精度，单位：USD）
 
-        uint256 totalUsdt;
-
-        uint256 price = rounds[roundId].tokenPrice;
-        require(price > 0, "Invalid price");
-        UD60x18 priceUD = ud(price);
-
-        if (prize1.count > 0 && prize1.discountUsed == false) {
+        if (prize1.count > 0 && !prize1.discountUsed) {
             prize1.discountUsed = true;
-
-            usdtAmount += (50 * prize1.count) * 1e18;
-            // 100 USD worth of token
-            totalUsdt += (100 * prize1.count);
+            totalUsdtToPay += 50e18 * prize1.count;     // 50 USDT * count
+            totalTokenValue += 100 * prize1.count;       // 100 USD * count
         }
 
-        if (prize2.count > 0 && prize2.discountUsed == false) {
+        if (prize2.count > 0 && !prize2.discountUsed) {
             prize2.discountUsed = true;
-
-            usdtAmount += (25 * prize2.count) * 1e18;
-            totalUsdt += (50 * prize2.count);
+            totalUsdtToPay += 25e18 * prize2.count;     // 25 USDT * count
+            totalTokenValue += 50 * prize2.count;        // 50 USD * count
         }
 
-        if (prize3.count > 0 && prize3.discountUsed == false) {
+        if (prize3.count > 0 && !prize3.discountUsed) {
             prize3.discountUsed = true;
-
-            usdtAmount += (25 * prize3.count) * 1e17;
-            totalUsdt += (5 * prize3.count);
+            totalUsdtToPay += 25e17 * prize3.count;     // 2.5 USDT * count (2.5 = 25/10)
+            totalTokenValue += 5 * prize3.count;         // 5 USD * count
         }
 
-        require(usdtAmount > 0, "usdt No prize");
+        require(totalUsdtToPay > 0, "No prize to claim");
 
-        uint256 totalUsdtScaled = totalUsdt * 1e18;
-        UD60x18 totalU = ud(totalUsdtScaled);
-        UD60x18 totalReward = totalU.div(priceUD);
-        tokenAmount = totalReward.unwrap();
+        // 计算可获得的代币数量
+        // tokenAmount = totalTokenValue (USD) / tokenPrice (USD per token)
+        UD60x18 priceUD = ud(round.tokenPrice);
+        UD60x18 totalValueUD = ud(totalTokenValue * 1e18);
+        UD60x18 tokenAmountUD = totalValueUD.div(priceUD);
+        uint256 tokenAmount = tokenAmountUD.unwrap();
 
-        // totalUsdt, totalToken.
-        usdtWinSum[roundId] += usdtAmount;
+        require(tokenAmount > 0, "Token amount is zero");
+
+        // 更新统计数据
+        usdtWinSum[roundId] += totalUsdtToPay;
         tokenWinSum[roundId] += tokenAmount;
 
-        require(IERC20(_USDT).transferFrom(msg.sender, disCountAddress, usdtAmount), "Transfer failed");
+        // 检查合约余额
+        require(IERC20(RICH).balanceOf(address(this)) >= tokenAmount, "Insufficient token balance");
+        // transfer
+        require(IERC20(_USDT).transferFrom(msg.sender, disCountAddress, totalUsdtToPay), "Transfer failed");
         require(IERC20(RICH).transfer(msg.sender, tokenAmount), "Transfer failed");
 
-        emit DiscountPurchase(roundId, msg.sender, usdtAmount, tokenAmount);
+        emit DiscountPurchase(roundId, msg.sender, totalUsdtToPay, tokenAmount);
     }
 
     function withdraw(address _token, address to, uint256 _amount) external onlyAuthorized {
