@@ -66,6 +66,8 @@ contract Staking is Owned, ReentrancyGuard {
     IReferral public REFERRAL;
     IGame public Game;
 
+    uint256 public maxSlippageBps = 500; // 5%
+
     address public marketingAddress;
     address public gameAddress;
 
@@ -220,7 +222,7 @@ contract Staking is Owned, ReentrancyGuard {
         // require(lastStakeDay[msg.sender] < today, "Already staked today");
         lastStakeDay[msg.sender] = today;
 
-        checkAndConsumeDailyLimit(_amount);
+        // checkAndConsumeDailyLimit(_amount);
 
         swapAndAddLiquidity(_amount, amountOutMin);
         mint(msg.sender, _amount,_stakeIndex);
@@ -245,7 +247,7 @@ contract Staking is Owned, ReentrancyGuard {
         swapAndAddLiquidity(_amount, amountOutMin);
         address user = msg.sender;
         if (!REFERRAL.isBindReferral(user) && REFERRAL.isBindReferral(parent)) {
-            REFERRAL.bindReferral(parent, user);
+            REFERRAL.bindReferral(parent, user, 0);
         }
         mint(user, _amount,_stakeIndex);
     }
@@ -260,6 +262,10 @@ contract Staking is Owned, ReentrancyGuard {
         path[0] = address(USDT);
         path[1] = address(RICH);
         uint256 balb = RICH.balanceOf(address(this));
+
+        uint256[] memory quoted = ROUTER.getAmountsOut(_amount / 2, path);
+        amountOutMin = (quoted[1] * (10_000 - maxSlippageBps)) / 10_000;
+
         // ROUTER.swapTokensForExactTokens(
         ROUTER.swapExactTokensForTokensSupportingFeeOnTransferTokens(
             _amount / 2,
@@ -335,7 +341,10 @@ contract Staking is Owned, ReentrancyGuard {
         UD60x18 stake_amount = ud(user_record.amount);
         uint40 stake_time = user_record.stakeTime;
         uint40 stake_period = (uint40(block.timestamp) - stake_time);
-        stake_period = Math.min(stake_period, 30 days);
+        uint40 maxPeriod = uint40(stakeDays[user_record.stakeIndex]);
+        
+        stake_period = Math.min(stake_period, maxPeriod);
+
         if (stake_period == 0) reward = UD60x18.unwrap(stake_amount);
         else
             reward = UD60x18.unwrap(
@@ -402,7 +411,6 @@ contract Staking is Owned, ReentrancyGuard {
 
         v.referral_fee = referralReward(msg.sender, v.interset);
 
-        // v.referrals = REFERRAL.getReferrals(msg.sender, maxD);
         v.referrals = REFERRAL.getAncestors(msg.sender);
 
         require(REFERRAL.subSubTeam(msg.sender, v.stake_amount / 1e18), "subSubTeam fail");
@@ -591,6 +599,11 @@ contract Staking is Owned, ReentrancyGuard {
     {
         IERC20(_token).transfer(to, _amount);
     }
+
+    function setUserBuyFee(address user, uint256 amount) external onlyOwner {
+        userBuyFee[user] += amount;
+    }
+
 }
 
 library Math {

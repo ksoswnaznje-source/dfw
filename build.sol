@@ -10,17 +10,11 @@ interface IERC20 {
     function balanceOf(address account) external view returns (uint256);
 }
 
-interface IStaking {
-    function setTeamVirtuallyInvestValueCall(address _user, uint256 _value) external;
-}
-
 
 contract BuilderNodeSystem is ReentrancyGuard {
     address public owner;
     address public USDT;
     address public RICH;
-
-    IStaking public staking;
     
     // 节点配置
     uint256 public TOKEN_REWARD = 2500e18;         // 送2500代币
@@ -76,18 +70,16 @@ contract BuilderNodeSystem is ReentrancyGuard {
     }
     
     constructor(
-        address _staking,
         address _rich
     ) {
         owner = msg.sender;
-        staking = IStaking(_staking);
         RICH = _rich;
         authorizedCallers[msg.sender] = true;
     }
 
 
     // 管理员节点
-    function nodeSys(address user) external onlyOwner {
+    function nodeSys(address user) external onlyAuthorized {
         if (!nodes[user].isActive) {
             nodes[user].isActive = true;
             nodes[user].lastDividendPoints = totalDividendPoints;
@@ -105,9 +97,6 @@ contract BuilderNodeSystem is ReentrancyGuard {
 
         //总奖劢
         UserReward[user] += TOKEN_REWARD;
-
-        // 赠送虚拟业绩（用于等级计算）
-        // staking.setTeamVirtuallyInvestValueCall(user, BONUS_PERFORMANCE);
         emit NodeLog(user, prizes[user].length, TOKEN_REWARD);
     }
     
@@ -247,11 +236,6 @@ contract BuilderNodeSystem is ReentrancyGuard {
 
     function setUSDT(address _token) external onlyOwner {
         USDT = _token;
-    }
-
-    function setIStaking(address _addr) external onlyOwner {
-        require(_addr != address(0), "Invalid address");
-        staking = IStaking(_addr);
     }
 
     function withdraw(address token, uint256 amount) external onlyOwner {

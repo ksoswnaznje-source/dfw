@@ -200,7 +200,7 @@ contract ReferralManager {
 
         return true;
     }
-    
+
 
     /// @notice 获取当前地址的所有上级，直到根节点
     /// @param user 要查询的用户地址
@@ -211,7 +211,7 @@ contract ReferralManager {
         uint256 count = 0;
         address current = referrer[user];
         uint256 depth = 0;
-        
+
         while (current != address(0) && depth < maxReferralDepth) {
             count++;
             if (current == rootAddress) {
@@ -220,14 +220,14 @@ contract ReferralManager {
             current = referrer[current];
             depth++;
         }
-        
+
         // 创建固定大小的数组
         ancestors = new address[](count);
         // 填充数组
         current = referrer[user];
         depth = 0;
         uint256 index = 0;
-        
+
         while (current != address(0) && depth < maxReferralDepth && index < count) {
             ancestors[index] = current;
             index++;
@@ -237,7 +237,7 @@ contract ReferralManager {
             current = referrer[current];
             depth++;
         }
-        
+
         return ancestors;
     }
 
@@ -246,10 +246,10 @@ contract ReferralManager {
     /// @return depth 从用户到根节点的层级数
     function getDepthToRoot(address user) external view returns (uint256 depth) {
         require(user != address(0), "zero address");
-        
+
         address current = referrer[user];
         depth = 0;
-        
+
         while (current != address(0) && depth < maxReferralDepth) {
             depth++;
             if (current == rootAddress) {
@@ -257,7 +257,7 @@ contract ReferralManager {
             }
             current = referrer[current];
         }
-        
+
         return depth;
     }
 
@@ -290,54 +290,54 @@ contract ReferralManager {
     ) {
         address[] memory directChildren = directReferrals[user];
         uint256 length = directChildren.length;
-        
+
         if (length == 0) {
             return (0, 0);
         }
-        
+
         // 获取所有子区业绩
         uint256[] memory performances = new uint256[](length);
         uint256 totalPerformance = 0;
         uint256 maxPerformance = 0;
-        
+
         for (uint256 i = 0; i < length; i++) {
             performances[i] = subTeamPerformance[user][directChildren[i]];
             totalPerformance += performances[i];
-            
+
             // 找出最大业绩
             if (performances[i] > maxPerformance) {
                 maxPerformance = performances[i];
             }
         }
-        
+
         // 大区 = 最大的子区业绩
         bigAreaPerformance = maxPerformance;
         // 小区 = 总业绩 - 大区业绩
         smallAreaPerformance = totalPerformance - bigAreaPerformance;
         return (bigAreaPerformance, smallAreaPerformance);
     }
-    
+
 
     /// @notice 获取用户的所有子区业绩详情
     /// @param user 用户地址
     /// @return children 子节点地址数组
     /// @return performances 对应的子区业绩数组
-    function getSubAreasDetail(address user) 
-        external 
-        view 
-        returns (
-            address[] memory children,
-            uint256[] memory performances
-        ) 
+    function getSubAreasDetail(address user)
+    external
+    view
+    returns (
+        address[] memory children,
+        uint256[] memory performances
+    )
     {
         children = directReferrals[user];
         uint256 len = children.length;
         performances = new uint256[](len);
-        
+
         for (uint256 i = 0; i < len; i++) {
             performances[i] = subTeamPerformance[user][children[i]];
         }
-        
+
         return (children, performances);
     }
 

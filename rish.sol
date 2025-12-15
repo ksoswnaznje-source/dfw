@@ -16,7 +16,7 @@ interface Ibuild {
 }
 
 interface IFeeSwap {
-    function swapAndLiquify() external;
+   function swapAndLiquify() external;
 }
 
 contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
@@ -30,8 +30,9 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
 
     address public buildAddress;
     address public marketingAddress;
-    address public gameAddress;
-    address public feeSwapAddress;
+    address public gameAddress; 
+    address public feeSwapAddress; // swap Fee
+    address public lpFeeAddress; // Lp Fee
 
     uint256 public swapAtAmount = 1 ether;
 
@@ -59,8 +60,8 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
 
     function updatePoolReserve(uint112 reserveU) private {
         // if (block.timestamp >= poolStatus.t + 1 hours) {
-        poolStatus.t = uint40(block.timestamp);
-        poolStatus.bal = reserveU;
+            poolStatus.t = uint40(block.timestamp);
+            poolStatus.bal = reserveU;
         // }
     }
 
@@ -90,7 +91,7 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
         gameAddress = _gameAddr;
 
         build = Ibuild(_buildAddr);
-
+        
         excludeFromFee(msg.sender);
         excludeFromFee(address(this));
         excludeFromFee(_staking);
@@ -108,7 +109,7 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
 
         if (
             !inSwapAndLiquify &&
-            sender != uniswapV2Pair &&
+            sender != uniswapV2Pair && 
             recipient != uniswapV2Pair &&
             AmountLPFee >= swapAtAmount
         ) {
@@ -117,7 +118,7 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
 
 
         if (
-            inSwapAndLiquify ||
+            inSwapAndLiquify || 
             _isExcludedFromFee[sender] ||
             _isExcludedFromFee[recipient]
         ) {
@@ -134,41 +135,41 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
         if (uniswapV2Pair == sender) {
             require(presale, "pre");
 
-        unchecked {
-            (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(uniswapV2Pair).getReserves();
-            address token0 = IUniswapV2Pair(uniswapV2Pair).token0();
-            uint112 reserveU;
-            uint112 reserveThis;
+            unchecked {
+                (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(uniswapV2Pair).getReserves();
+                address token0 = IUniswapV2Pair(uniswapV2Pair).token0();
+                uint112 reserveU;
+                uint112 reserveThis;
 
-            if (token0 == USDT) {
-                reserveU = reserve0;
-                reserveThis = reserve1;
-            } else {
-                reserveU = reserve1;
-                reserveThis = reserve0;
-            }
-
-            updatePoolReserve(reserveU);
-
-            if (!buyState) {
-                if (reserveU > 30000000 ether) {
-                    buyState = true;
+                if (token0 == USDT) {
+                    reserveU = reserve0;
+                    reserveThis = reserve1;
+                } else {
+                    reserveU = reserve1;
+                    reserveThis = reserve0;
                 }
-                // require(buyState, "buyState fail");
+
+                updatePoolReserve(reserveU);
+
+                if (!buyState) {
+                    if (reserveU > 30000000 ether) {
+                        buyState = true;
+                    }
+                    // require(buyState, "buyState fail");
+                }
+
+                lastBuyTime[recipient] = uint40(block.timestamp);
+                uint256 fee = (amount * 5) / 1000;
+                super._transfer(sender, address(0xdead), fee);
+                
+                uint256 LPFee = (amount * 25) / 1000;
+                AmountLPFee += LPFee;
+                super._transfer(sender, feeSwapAddress, LPFee);
+                super._transfer(sender, recipient, amount - fee - LPFee);
             }
-
-            lastBuyTime[recipient] = uint40(block.timestamp);
-            uint256 fee = (amount * 5) / 1000;
-            super._transfer(sender, address(0xdead), fee);
-
-            uint256 LPFee = (amount * 25) / 1000;
-            AmountLPFee += LPFee;
-            super._transfer(sender, feeSwapAddress, LPFee);
-            super._transfer(sender, recipient, amount - fee - LPFee);
-        }
         } else if (uniswapV2Pair == recipient) {
             require(presale, "pre");
-            // require(block.timestamp >= lastBuyTime[sender] + coldTime, "cold");
+            require(block.timestamp >= lastBuyTime[sender] + coldTime, "cold");
 
             (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(uniswapV2Pair).getReserves();
             address token0 = IUniswapV2Pair(uniswapV2Pair).token0();
@@ -189,12 +190,11 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
             uint256 fee = (amount * 1) / 100;
             uint256 totalFee = fee * 3;
 
-             super._transfer(sender, marketingAddress, fee); // market addr
-             super._transfer(sender, buildAddress, fee); // build addr
-             build.depositDividend(fee);
+            super._transfer(sender, marketingAddress, fee); // market addr
+            super._transfer(sender, buildAddress, fee); // build addr
+            build.depositDividend(fee);
+            super._transfer(sender, lpFeeAddress, fee); // Lp Fee
 
-            super._transfer(sender, feeSwapAddress, fee);
-            AmountLPFee += fee;
             super._transfer(sender, recipient, amount - totalFee);
 
         } else {
@@ -207,12 +207,12 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
     function swapFee() public {
         if (inSwapAndLiquify) return;
         inSwapAndLiquify = true;
-
+        
         if (AmountLPFee == 0) {
             inSwapAndLiquify = false;
             return;
         }
-
+        
         AmountLPFee = 0;
         feeSwap.swapAndLiquify();
         inSwapAndLiquify = false;
@@ -230,7 +230,6 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
 
     function setMarketingAddress(address addr) external onlyOwner {
         marketingAddress = addr;
-        excludeFromFee(addr);
     }
 
     function setBuildAddress(address addr) external onlyOwner {
@@ -238,7 +237,11 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
         excludeFromFee(addr);
     }
 
-    function setFeeSwapAddress(address addr) external onlyOwner {
+    function setLpFeeAddress(address addr) external onlyOwner {
+        lpFeeAddress = addr;
+    }
+
+    function setSwapFeeAddress(address addr) external onlyOwner {
         feeSwapAddress = addr;
         feeSwap = IFeeSwap(addr);
         excludeFromFee(addr);
@@ -255,8 +258,8 @@ contract Rich is ExcludedFromFeeList, BaseUSDT, ERC20 {
     }
 
     function multi_bclist(address[] calldata addresses, bool value)
-    public
-    onlyOwner
+        public
+        onlyOwner
     {
         require(addresses.length < 201);
         for (uint256 i; i < addresses.length; ++i) {

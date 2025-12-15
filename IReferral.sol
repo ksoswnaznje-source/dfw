@@ -11,7 +11,7 @@ interface IReferral{
 
     function getReferralCount(address _address) external view returns(uint256);
 
-    function bindReferral(address _referral,address _user) external;
+    function bindReferral(address _referral,address _user, uint256 amount) external;
 
     function getReferrals(address _address,uint256 _num) external view returns(address[] memory);
 

@@ -8,10 +8,12 @@ import {_USDT, _ROUTER} from "./Const.sol";
 
 address constant USDT = _USDT;
 
-contract Distributor {
+
+contract SwapFee {
     bool public inSwapAndLiquify;
     address public owner;
     mapping(address => bool) public authorizedCallers;
+    uint256 public maxSlippageBps = 500; // 5%
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
@@ -25,7 +27,7 @@ contract Distributor {
 
     address public RICH;
     IUniswapV2Router02 constant uniswapV2Router = IUniswapV2Router02(_ROUTER);
-
+    
     constructor(address _token) {
         owner = msg.sender;
         authorizedCallers[msg.sender] = true;
@@ -35,7 +37,7 @@ contract Distributor {
         IERC20(_token).approve(address(_ROUTER), type(uint256).max);
     }
 
-    function swapAndLiquify() external {
+    function swapAndLiquify() external onlyAuthorized {
         IERC20 usdt = IERC20(USDT);
         IERC20 rich = IERC20(RICH);
 
@@ -52,24 +54,28 @@ contract Distributor {
     }
 
     function swapTokenForUsdt(uint256 tokenAmount, address to) internal {
-    unchecked {
-        address[] memory path = new address[](2);
-        path[0] = address(RICH);
-        path[1] = address(USDT);
-        // make the swap
-        uniswapV2Router
-        .swapExactTokensForTokensSupportingFeeOnTransferTokens(
-            tokenAmount,
-            0, // accept any amount of ETH
-            path,
-            to,
-            block.timestamp
-        );
+        unchecked {
+            address[] memory path = new address[](2);
+            path[0] = address(RICH);
+            path[1] = address(USDT);
+
+            uint256[] memory quoted = uniswapV2Router.getAmountsOut(tokenAmount, path);
+            uint256 minOut = (quoted[1] * (10_000 - maxSlippageBps)) / 10_000;
+
+            // make the swap
+            uniswapV2Router
+                .swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    tokenAmount,
+                    minOut,
+                    path,
+                    to,
+                    block.timestamp + 300
+                );
+        }
     }
-    }
 
 
-
+    
     function addLiquidity(uint256 tokenAmount, uint256 usdtAmount) internal {
         uniswapV2Router.addLiquidity(
             address(RICH),
@@ -93,13 +99,10 @@ contract Distributor {
         owner = newOwner;
     }
 
-    function withdraw(address _token, address to, uint256 _amount)
-    external
-    onlyOwner
-    {
+    function withdraw(address _token, address to, uint256 _amount) external onlyAuthorized {
         IERC20(_token).transfer(to, _amount);
     }
-
+    
     function setAuthorizedCaller(address caller, bool status) external onlyOwner {
         authorizedCallers[caller] = status;
     }
