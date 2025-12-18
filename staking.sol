@@ -214,15 +214,15 @@ contract Staking is Owned, ReentrancyGuard {
     }
 
     function stake(uint160 _amount, uint256 amountOutMin,uint8 _stakeIndex) external onlyEOA {
-        // require(_amount <= maxStakeAmount(), "<1000");
+        require(_amount <= maxStakeAmount(), "<1000");
         require(_stakeIndex<=2,"<=2");
 
         uint40 today = uint40(block.timestamp / 1 days);
         // 每天只能质押一次
-        // require(lastStakeDay[msg.sender] < today, "Already staked today");
+        require(lastStakeDay[msg.sender] < today, "Already staked today");
         lastStakeDay[msg.sender] = today;
 
-        // checkAndConsumeDailyLimit(_amount);
+        checkAndConsumeDailyLimit(_amount);
 
         swapAndAddLiquidity(_amount, amountOutMin);
         mint(msg.sender, _amount,_stakeIndex);
@@ -238,7 +238,7 @@ contract Staking is Owned, ReentrancyGuard {
         require(_stakeIndex<=2,"<=2");
 
         uint40 today = uint40(block.timestamp / 1 days);
-    
+
         require(lastStakeDay[msg.sender] < today, "Already staked today");
         lastStakeDay[msg.sender] = today;
 
@@ -253,7 +253,7 @@ contract Staking is Owned, ReentrancyGuard {
     }
 
     function swapAndAddLiquidity(uint160 _amount, uint256 amountOutMin)
-        private
+    private
     {
         USDT.transferFrom(msg.sender, address(this), _amount);
 
@@ -313,9 +313,9 @@ contract Staking is Owned, ReentrancyGuard {
     }
 
     function balanceOf(address account)
-        public
-        view
-        returns (uint256 balance)
+    public
+    view
+    returns (uint256 balance)
     {
         Record[] storage cord = userStakeRecord[account];
         if (cord.length > 0) {
@@ -334,15 +334,15 @@ contract Staking is Owned, ReentrancyGuard {
 
 
     function caclItem(Record storage user_record)
-        private
-        view
-        returns (uint256 reward)
+    private
+    view
+    returns (uint256 reward)
     {
         UD60x18 stake_amount = ud(user_record.amount);
         uint40 stake_time = user_record.stakeTime;
         uint40 stake_period = (uint40(block.timestamp) - stake_time);
         uint40 maxPeriod = uint40(stakeDays[user_record.stakeIndex]);
-        
+
         stake_period = Math.min(stake_period, maxPeriod);
 
         if (stake_period == 0) reward = UD60x18.unwrap(stake_amount);
@@ -353,9 +353,9 @@ contract Staking is Owned, ReentrancyGuard {
     }
 
     function rewardOfSlot(address user, uint8 index)
-        public
-        view
-        returns (uint256 reward)
+    public
+    view
+    returns (uint256 reward)
     {
         Record storage user_record = userStakeRecord[user][index];
         return caclItem(user_record);
@@ -433,9 +433,9 @@ contract Staking is Owned, ReentrancyGuard {
         uint256 fee = userBuyFee[msg.sender];
         uint256 transferAmount = keys * 1e18;
         require(fee >= transferAmount, "keys fail");
-        
-        userBuyFee[msg.sender] -= transferAmount;
         require(totalBuyFee >= transferAmount, "Invalid total");
+
+        userBuyFee[msg.sender] -= transferAmount;
         totalBuyFee -= transferAmount;
 
         require(USDT.transfer(gameAddress, transferAmount), "usdt fail");
@@ -448,8 +448,8 @@ contract Staking is Owned, ReentrancyGuard {
     }
 
     function burn(uint256 index)
-        private
-        returns (uint256 reward, uint256 amount, uint8 day)
+    private
+    returns (uint256 reward, uint256 amount, uint8 day)
     {
         address sender = msg.sender;
         Record[] storage cord = userStakeRecord[sender];
@@ -501,8 +501,8 @@ contract Staking is Owned, ReentrancyGuard {
     }
 
     function teamReward(address[] memory referrals, uint256 _interset)
-        private
-        returns (uint256 fee)
+    private
+    returns (uint256 fee)
     {
         address top_team;
         uint256 team_kpi;
@@ -520,8 +520,8 @@ contract Staking is Owned, ReentrancyGuard {
 
             if (
                 team_kpi >= 1000000 &&
-                    maxTeamRate > spendRate &&
-                    isPreacher(top_team)
+                maxTeamRate > spendRate &&
+                isPreacher(top_team)
             ) {
                 USDT.transfer(
                     top_team,
@@ -532,9 +532,9 @@ contract Staking is Owned, ReentrancyGuard {
 
             if (
                 team_kpi >= 500000 &&
-                    team_kpi < 1000000 &&
-                    spendRate < 16 &&
-                    isPreacher(top_team)
+                team_kpi < 1000000 &&
+                spendRate < 16 &&
+                isPreacher(top_team)
             ) {
                 USDT.transfer(top_team, (_interset * (16 - spendRate)) / 100);
                 spendRate = 16;
@@ -542,9 +542,9 @@ contract Staking is Owned, ReentrancyGuard {
 
             if (
                 team_kpi >= 100000 &&
-                    team_kpi < 500000 &&
-                    spendRate < 12 &&
-                    isPreacher(top_team)
+                team_kpi < 500000 &&
+                spendRate < 12 &&
+                isPreacher(top_team)
             ) {
                 USDT.transfer(top_team, (_interset * (12 - spendRate)) / 100);
                 spendRate = 12;
@@ -552,9 +552,9 @@ contract Staking is Owned, ReentrancyGuard {
 
             if (
                 team_kpi >= 50000 &&
-                    team_kpi < 100000 &&
-                    spendRate < 8 &&
-                    isPreacher(top_team)
+                team_kpi < 100000 &&
+                spendRate < 8 &&
+                isPreacher(top_team)
             ) {
                 USDT.transfer(top_team, (_interset * (8 - spendRate)) / 100);
                 spendRate = 8;
@@ -562,15 +562,15 @@ contract Staking is Owned, ReentrancyGuard {
 
             if (
                 team_kpi >= 10000 &&
-                    team_kpi < 50000 &&
-                    spendRate < 4 &&
-                    isPreacher(top_team)
+                team_kpi < 50000 &&
+                spendRate < 4 &&
+                isPreacher(top_team)
             ) {
                 USDT.transfer(top_team, (_interset * (4 - spendRate)) / 100);
                 spendRate = 4;
             }
         }
-        
+
         if (maxTeamRate > spendRate) {
             USDT.transfer(marketingAddress, fee - ((_interset * spendRate) / 100));
         }
@@ -594,14 +594,15 @@ contract Staking is Owned, ReentrancyGuard {
     }
 
     function withdraw(address _token, address to, uint256 _amount)
-        external
-        onlyOwner
+    external
+    onlyOwner
     {
         IERC20(_token).transfer(to, _amount);
     }
 
     function setUserBuyFee(address user, uint256 amount) external onlyOwner {
         userBuyFee[user] += amount;
+        totalBuyFee += amount;
     }
 
 }

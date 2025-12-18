@@ -46,6 +46,7 @@ interface IRICH {
     function transferOwnership(address newOwner) external;
     function uniswapV2Pair() external view returns (address);
     function recycle(uint256 amount) external returns (bool);
+    function recycleGame(uint256 amount) external returns (bool);
     // function setInvite(address user, address parent) external;
     // function inviter(address user) external view returns (address parent);
     function getReserveU() external view returns (uint112);

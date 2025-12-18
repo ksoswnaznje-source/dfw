@@ -15,39 +15,39 @@ contract BuilderNodeSystem is ReentrancyGuard {
     address public owner;
     address public USDT;
     address public RICH;
-    
+
     // 节点配置
     uint256 public TOKEN_REWARD = 2500e18;         // 送2500代币
     uint256 public constant BONUS_PERFORMANCE = 10000;   // 送1万虚拟业绩
 
     // 锁仓时间
     uint256 public constant LOCK_DURATION = 180 days;
-    
+
     struct Node {
         bool isActive;
         uint256 lastDividendPoints;  // 上次领取时的累积分红点
         uint256 unclaimedDividends;  // 交易手续费未领取的分红
     }
-    
+
     mapping(address => Node) public nodes;
     address[] public nodeHolders;
-    
+
     uint256 public totalNodes;
     uint256 public dividendPool;
 
     uint256 public startTime;
-    
+
     // 累积分红点数（每个节点的累积分红）
     uint256 public totalDividendPoints;
-    
+
     // 避免小数运算
     uint256 constant PRECISION = 1e18;
-    
+
     event DividendDeposited(uint256 amount, uint256 perNodeAmount);
     event DividendClaimed(address indexed holder, uint256 amount);
 
     event NodeLog(address user, uint256 amount, uint256 perNodeAmount);
-    
+
     mapping(address => bool) public authorizedCallers;
 
     struct Prize {
@@ -68,7 +68,7 @@ contract BuilderNodeSystem is ReentrancyGuard {
         require(authorizedCallers[msg.sender] || msg.sender == owner, "Not authorized");
         _;
     }
-    
+
     constructor(
         address _rich
     ) {
@@ -90,17 +90,17 @@ contract BuilderNodeSystem is ReentrancyGuard {
         // REWARD
         prizes[user].push(
             Prize({
-                token: TOKEN_REWARD,
-                claimed: 0
-            })
+        token: TOKEN_REWARD,
+        claimed: 0
+        })
         );
 
         //总奖劢
         UserReward[user] += TOKEN_REWARD;
         emit NodeLog(user, prizes[user].length, TOKEN_REWARD);
     }
-    
-    
+
+
     /**
      * @notice 累积分红模型 / token swap add
      * @param amount 分红金额（已经是 wei 单位，1e18 精度）
@@ -108,18 +108,18 @@ contract BuilderNodeSystem is ReentrancyGuard {
     function depositDividend(uint256 amount) external onlyAuthorized {
         require(amount > 0, "Zero amount");
         dividendPool += amount;
-        
+
         // 如果有活跃节点，更新累积分红点数
         if (totalNodes > 0) {
             // 计算每个节点增加的分红点数
             // amount 已经是 1e18 精度，再乘 PRECISION 用于更高精度计算
             uint256 dividendPerNode = (amount * PRECISION) / totalNodes;
             totalDividendPoints += dividendPerNode;
-            
+
             emit DividendDeposited(amount, amount / totalNodes);
         }
     }
-    
+
     /**
      * @notice 计算用户未领取的分红
      * @param holder 持有者地址
@@ -130,14 +130,14 @@ contract BuilderNodeSystem is ReentrancyGuard {
         if (!node.isActive) {
             return 0;
         }
-        
+
         // 计算自上次领取后累积的分红
         uint256 newDividendPoints = totalDividendPoints - node.lastDividendPoints;
         uint256 pending = (newDividendPoints / PRECISION) + node.unclaimedDividends;
-        
+
         return pending;
     }
-    
+
     /**
      * @notice 领取分红
      */
@@ -145,30 +145,30 @@ contract BuilderNodeSystem is ReentrancyGuard {
         uint256 amount = pendingDividends(msg.sender);
         require(amount > 0, "No dividends to claim");
         require(dividendPool >= amount, "Insufficient dividend pool");
-        
+
         // 更新状态
         nodes[msg.sender].lastDividendPoints = totalDividendPoints;
         nodes[msg.sender].unclaimedDividends = 0;
         dividendPool -= amount;
-        
+
         // 转账
         require(IERC20(RICH).transfer(msg.sender, amount), "Transfer failed");
         emit DividendClaimed(msg.sender, amount);
     }
-    
+
     function getPrizeCount(address user) external view returns (uint256) {
         return prizes[user].length;
     }
 
     // 赠送代币 - 释放
     function claimPrize() external nonReentrant {
-        address user = msg.sender;        
+        address user = msg.sender;
         require(startTime > 0, "No startTime");
         require(UserClaimed[user] < UserReward[user], "Already claimed all");
-        
+
         uint256 amount;
         uint256 elapsed = block.timestamp - startTime;
-        
+
         if (elapsed >= LOCK_DURATION) {
             amount = UserReward[user] - UserClaimed[user];
         } else {
@@ -188,7 +188,7 @@ contract BuilderNodeSystem is ReentrancyGuard {
     }
 
     // 已释放量
-    function getClaimPrize(address user) public view returns (uint256) {     
+    function getClaimPrize(address user) public view returns (uint256) {
         uint256 rwd = UserReward[user];
         if (rwd == 0 || startTime == 0) {
             return 0;
@@ -196,7 +196,7 @@ contract BuilderNodeSystem is ReentrancyGuard {
 
         uint256 amount;
         uint256 elapsed = block.timestamp - startTime;
-        
+
         if (elapsed >= LOCK_DURATION) {
             amount = UserReward[user] - UserClaimed[user];
 
@@ -241,7 +241,7 @@ contract BuilderNodeSystem is ReentrancyGuard {
     function withdraw(address token, uint256 amount) external onlyOwner {
         require(IERC20(token).transfer(owner, amount), "Transfer failed");
     }
-    
+
     /**
      * @notice 转移所有权
      */
@@ -249,7 +249,7 @@ contract BuilderNodeSystem is ReentrancyGuard {
         require(newOwner != address(0), "Invalid address");
         owner = newOwner;
     }
-    
+
     function setAuthorizedCaller(address caller, bool status) external onlyOwner {
         authorizedCallers[caller] = status;
     }
